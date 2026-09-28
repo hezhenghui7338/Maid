@@ -1,4 +1,7 @@
 mod projects;
+mod settings;
+
+use settings::Settings;
 
 use projects::{copy_markdown_body, TreeNode};
 use serde::{Deserialize, Serialize};
@@ -44,6 +47,24 @@ fn open_root(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
 
 fn state_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data(app)?.join("state.json"))
+}
+
+fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data(app)?.join("settings.json"))
+}
+
+fn legacy_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(projects_dir(app)?.join(".maid").join("settings.json"))
+}
+
+#[tauri::command]
+fn load_settings(app: AppHandle) -> Result<Settings, String> {
+    settings::resolve_settings(&settings_path(&app)?, &legacy_settings_path(&app)?)
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+    settings::store_settings(&settings_path(&app)?, &settings)
 }
 
 fn read_state(app: &AppHandle) -> Result<StoreState, String> {
@@ -187,6 +208,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             session,
+            load_settings,
+            save_settings,
             remember_selection,
             list_tree,
             create_folder,
@@ -219,6 +242,10 @@ mod tests {
         assert!(command_is_async(source, "import_markdown"), "导入文件的对话框不能跑在主线程上");
         assert!(command_is_async(source, "export_text"), "导出对话框不能跑在主线程上");
         assert!(command_is_async(source, "list_tree"), "文件树扫描不能堵住主线程");
+        assert!(
+            source.contains("load_settings,") && source.contains("save_settings,"),
+            "API 设置命令必须挂在应用上，且只走全局文件"
+        );
     }
 
     fn command_is_async(source: &str, name: &str) -> bool {

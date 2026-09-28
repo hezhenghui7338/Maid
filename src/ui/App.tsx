@@ -29,7 +29,6 @@ import { host, inTauri, type Selection, type TreeNode } from "../host";
 import { SourceEditor, type EditorHandle, type HighlightRange } from "./editor";
 
 const INDEX_PATH = ".maid/index.json";
-const SETTINGS_PATH = ".maid/settings.json";
 
 export function App() {
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -135,7 +134,7 @@ export function App() {
     const [listed, storedIndex, storedSettings] = await Promise.all([
       host.listTree(),
       readJson<ProjectIndex>(INDEX_PATH, emptyIndex()),
-      readJson<Settings>(SETTINGS_PATH, defaultSettings),
+      host.loadSettings(),
     ]);
     setTree(listed);
     setIndex(storedIndex.version === 1 ? storedIndex : emptyIndex());
@@ -205,7 +204,7 @@ export function App() {
 
   async function persistSettings(next: Settings) {
     setSettings(next);
-    await host.writeText(SETTINGS_PATH, JSON.stringify(next, null, 2));
+    await host.saveSettings(next);
   }
 
   async function analyze() {

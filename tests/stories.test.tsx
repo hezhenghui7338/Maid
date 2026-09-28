@@ -7,6 +7,7 @@ import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/ui/App";
 import { STAGE_TAGS } from "../src/core/stages";
+import { defaultSettings, type Settings } from "../src/core/types";
 
 const FILE = "notes/idea.md";
 const SOURCE = "# 立项\n\n需要完成上线检查。\n\n## 范围\n\n- 写出测试\n- 修好新建\n";
@@ -35,6 +36,10 @@ const memory = vi.hoisted(() => {
     queuedImport: null as { name: string; content: string } | null,
     lastExport: null as { name: string; content: string } | null,
     selection,
+    globalSettings: null as Settings | null,
+    fileText(path: string) {
+      return files.get(path);
+    },
     reset() {
       files.clear();
       folders.clear();
@@ -42,6 +47,18 @@ const memory = vi.hoisted(() => {
       this.selection = null;
       this.queuedImport = null;
       this.lastExport = null;
+      this.globalSettings = null;
+    },
+    async loadSettings() {
+      if (this.globalSettings) return { ...this.globalSettings };
+      const legacy = files.get(".maid/settings.json");
+      if (legacy === undefined) return { ...defaultSettings };
+      const parsed = JSON.parse(legacy) as Partial<Settings>;
+      this.globalSettings = { ...defaultSettings, ...parsed };
+      return { ...this.globalSettings };
+    },
+    async saveSettings(settings: Settings) {
+      this.globalSettings = { ...settings };
     },
     async session() {
       return { selection: this.selection, warnings: [] as string[] };
@@ -630,6 +647,89 @@ describe("界面故事", () => {
     expect((screen.getByRole("textbox", { name: "模型名称" }) as HTMLInputElement).value).toBe("example-model");
   });
 
+  it("AI-06 未打开文件时保存的接口在重新进入后仍用于分析", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("button", { name: "API 设置" });
+    expect(memory.globalSettings).toBeNull();
+    expect(memory.fileText(".maid/settings.json")).toBeUndefined();
+
+    await saveApiSettings(user, "https://models.example/v1", "secret-key", "example-model");
+    expect(memory.fileText(".maid/settings.json")).toBeUndefined();
+    expect(memory.globalSettings).toEqual({
+      baseUrl: "https://models.example/v1",
+      apiKey: "secret-key",
+      model: "example-model",
+    });
+
+    cleanup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "API 设置" }));
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "接口地址" }) as HTMLInputElement).value).toBe(
+        "https://models.example/v1",
+      );
+    });
+    await createIdeaFile(user);
+    replaceEditor(SOURCE);
+    await user.click(screen.getByRole("button", { name: "分析" }));
+    await waitFor(() => {
+      expect(fetchMock().mock.calls.length).toBeGreaterThan(0);
+    });
+    const [url, init] = fetchMock().mock.calls.at(-1) ?? [];
+    expect(url).toBe("https://models.example/v1/chat/completions");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer secret-key");
+    expect(memory.fileText(".maid/settings.json")).toBeUndefined();
+  });
+
+  it("AI-07 旧设置迁入一次且已有全局设置时不再覆盖", async () => {
+    const user = userEvent.setup();
+    await memory.writeText(
+      ".maid/settings.json",
+      JSON.stringify({
+        baseUrl: "https://legacy.example/v1",
+        apiKey: "legacy-key",
+        model: "legacy-model",
+      }),
+    );
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "API 设置" }));
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "接口地址" }) as HTMLInputElement).value).toBe(
+        "https://legacy.example/v1",
+      );
+    });
+    expect((screen.getByLabelText("API 密钥") as HTMLInputElement).value).toBe("legacy-key");
+    expect(memory.globalSettings?.baseUrl).toBe("https://legacy.example/v1");
+
+    cleanup();
+    await memory.writeText(
+      ".maid/settings.json",
+      JSON.stringify({
+        baseUrl: "https://other.example/v1",
+        apiKey: "other-key",
+        model: "other-model",
+      }),
+    );
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "API 设置" }));
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "接口地址" }) as HTMLInputElement).value).toBe(
+        "https://legacy.example/v1",
+      );
+    });
+    await createIdeaFile(user);
+    replaceEditor(SOURCE);
+    await user.click(screen.getByRole("button", { name: "分析" }));
+    await waitFor(() => {
+      expect(fetchMock().mock.calls.length).toBeGreaterThan(0);
+    });
+    const [url, init] = fetchMock().mock.calls.at(-1) ?? [];
+    expect(url).toBe("https://legacy.example/v1/chat/completions");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer legacy-key");
+    expect(memory.fileText(".maid/settings.json")).toContain("https://other.example/v1");
+  });
+
   it("ED-07 写作屏可在整篇与按段之间切换", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -704,6 +804,21 @@ describe("界面故事", () => {
     expect(body).not.toContain("乙段改过的句子");
   });
 });
+
+async function saveApiSettings(user: UserEvent, baseUrl: string, apiKey: string, model: string) {
+  await user.click(await screen.findByRole("button", { name: "API 设置" }));
+  const base = screen.getByRole("textbox", { name: "接口地址" });
+  const key = screen.getByLabelText("API 密钥");
+  const modelName = screen.getByRole("textbox", { name: "模型名称" });
+  await user.clear(base);
+  await user.type(base, baseUrl);
+  await user.clear(key);
+  await user.type(key, apiKey);
+  await user.clear(modelName);
+  await user.type(modelName, model);
+  await user.click(screen.getByRole("button", { name: "保存" }));
+  await screen.findByText("API 设置已保存");
+}
 
 async function createNamedProject(_user: UserEvent) {
   await screen.findByRole("button", { name: "新建" });

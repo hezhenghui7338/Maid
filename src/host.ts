@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Settings } from "./core/types";
 
 export interface TreeNode {
   path: string;
@@ -21,6 +22,8 @@ export function inTauri(): boolean {
 
 export const host = {
   session: () => invoke<WorkspaceSession>("session"),
+  loadSettings: () => invoke<Settings>("load_settings"),
+  saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   rememberSelection: (kind: Selection["kind"], path: string) =>
     invoke<void>("remember_selection", { kind, path }),
   listTree: () => invoke<TreeNode[]>("list_tree"),
