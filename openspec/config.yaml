@@ -1,0 +1,33 @@
+schema: spec-driven
+
+context: |
+  Language: zh
+  All artifacts must be written in zh.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Tech stack: Tauri, React, Rust, Vitest. The app is macOS-only.
+  Product behavior source of truth is openspec/specs/. PRD.md is a narrative index, not a second behavior spec. RAW_PRD.md is the original sketch and is not authoritative. TDD.md is the executable case catalog.
+  Locked decisions are requirements in openspec/specs/decisions/spec.md. Do not change them unless the user explicitly confirms a delta that names the decision.
+  Locked: single-screen WYSIWYG editing, no split source/preview and no source-mode toggle; the file on disk stays Markdown; tags, tasks, and segment times stay in a sidecar index and MUST NOT be written back into Markdown; segmentation is programmatic and the model only labels cut segments and sniffs tasks; the next analysis aligns new segments to the previous round before generating; analysis is user-triggered only and MUST NOT run in the background; the platform is macOS; the model API is OpenAI-compatible Chat Completions, including local Ollama.
+  Tasks cite TDD ids (ED, SG, IX, AN, TG, TK, SR, FL, AI). When a change fixes a known bad case, cite the badcase id. Bad cases live in tests/badcases/draft.jsonl and catalog.jsonl.
+
+rules:
+  proposal:
+    - Name the openspec domain specs this change adds or modifies.
+    - If the change conflicts with openspec/specs/decisions, call that out and do not treat it as an incidental edit.
+  specs:
+    - Use SHALL or MUST. Each requirement has at least one Scenario with WHEN/THEN.
+    - Write the prose in Chinese. Keep structural headings and SHALL/MUST in English.
+    - Behavior changes are deltas against openspec/specs. Do not copy the same behavior back into PRD.md as a second spec.
+  tasks:
+    - Each checkbox cites the TDD case ids it covers.
+    - When the change fixes a known bad case, cite the badcase id and include promoting that entry in the same change.
+
+operations:
+  apply:
+    guidance:
+      - If this turn is fixing a recorded bad case, add the minimal regression test in the same change and promote the entry from tests/badcases/draft.jsonl to catalog.jsonl.
+      - A bugfix that does not change specified behavior does not get a delta spec. Use skip_specs only when no requirement changes.
+  archive:
+    guidance:
+      - A behavior change is not release-complete until its delta is merged into openspec/specs.
+      - Keep the completion summary concise.

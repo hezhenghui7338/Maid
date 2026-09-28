@@ -1,0 +1,10 @@
+---
+description: 用户要求相对 openspec/specs 是新增、修改或删除时，先澄清再改规格和代码
+alwaysApply: true
+---
+
+# 行为规格澄清（每次对话）
+
+用户输入的要求和 [`openspec/specs`](openspec/specs) 不符，且属于 **新增需求 / 修改需求 / 删除需求** 时：停止实现，读项目 skill `prd-clarify`（[`.cursor/skills/prd-clarify/SKILL.md`](.cursor/skills/prd-clarify/SKILL.md)），整理 **原需求、现在的实现、新的需求**，要求用户澄清。确认后先 `/opsx-propose` 写出 delta，人看过再 `/opsx-apply`。行为以 `openspec/specs/` 为准，不要把同一条行为再写进 `PRD.md`。
+
+不触发：修 bug、对齐已有规格的实现缺口、不改变产品行为的重构。这三种不另写 delta。
